@@ -1,0 +1,1 @@
+include $(NOS_HOME)/Makefile.kconf

@@ -1,0 +1,58 @@
+###############################################################################
+
+ 		        NanoQplus v3 
+		    	   R E A D M E 
+
+		  Last Modified : 2015. 01. 06.
+   ETRI (Electronics and Telecommunications of Research Institute)
+###############################################################################
+
+ NanoQplus (Shortly, Nano OS) is an operating system for Low-power and 
+Lossy Networks (LLNs) applications. Nano OS is a new multi-threaded, light-
+weight and low power sensor network operating system integrated with a general
+-purpose single-board hardware platform to enable flexible and rapid 
+prototyping of WSN.
+
+ The key design goal of Nano OS is ease of use, i.e. a small learning curve 
+that encourages novice programmers to rapidly prototype novel M2M and Internet 
+of Things (IoT) applications, as well as flexibility, so that expert 
+reserachers can continue to adapt and extend the hardware/software system to 
+apply the needs of their own advanced research.
+
+ Currently, Nano OS supports the following chracteristics.
+ - Code optimization by reconfiguring modules
+ - A variety of example codes for Nano OS modules
+ - Easy-to-coding style in programming with 'C'
+
+ To learn how to install and use Nano OS, please refer to the 'doc' directory. 
+After installation, given below are short description of writing an application 
+and downloading the application image into a wireless sensor node.
+
+  (1) Prepare a directory for your application (e.g. mkdir blink)
+  (2) Move to that directory (e.g. cd blink)
+  (3) Create 'Makefile' in your application directory to include the 
+      '$NOS_HOME/Makefile.kconf'.
+      (e.g. echo "-include $(NOS_HOME)/Makefile.kconf" > Makefile)
+  (4) Select Nano OS modules for your application by typing 'make menuconfig', 
+      which will create 'kconf.h' file (e.g. make menuconfig) 
+  (5) Write your own application in C (e.g. vi blink.c)
+      The format of Nano OS applications is given below.
+
+  #include "nos.h" 
+
+  void main()
+  {
+    nos_init();  
+	
+    .........
+    YOUR CODE HERE
+    .........
+  }
+
+  (6) Compile & Link by typing 'make clean' and 'make', which creates a 
+      hexa-formated file (*.rom or *.hex).
+  (7) Download the hexa-formated file into a specific sensor board by typing 
+      'make burn port=<port_class>', where <port_class> is one of the following 
+      port class, [com1|com2|...|com*|tty*|usbasp].
+
+###############################################################################

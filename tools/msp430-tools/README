@@ -1,0 +1,17 @@
+Author: Jongsoo Jeong (ETRI)
+Date: Aug 26, 2013
+
+This directory contains a Makefile to download msp430-gcc 4.6.3, msp430-bsl, and 
+mspdebug-0.19 for a Windows (Cygwin) environment. Also TI providing drivers to 
+support mspdebug-0.19 are included. It is for users convenience. We recommend to 
+use this toolchain to program MSP430 MCUs in Cygwin environments.
+
+INSTALL
+=======
+Installing the toolchain is pretty simple. Just type 'make'. Then Makefile will 
+download toolchain packages from the Internet and unzip them automatically.
+
+After 'make', add a path to msp430-gcc binaries to your PATH enviroment variable.
+The msp430-gcc binaries may be in the '$NOS_HOME/tools/msp430-tools/
+mspgcc-20120406-p20120911/bin'.
+

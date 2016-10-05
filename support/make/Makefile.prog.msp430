@@ -1,0 +1,36 @@
+# -*- mode:Makefile; -*-
+###############################################################################
+# MSP430-common flash downloader configuration                                #
+# Author: Jongsoo Jeong (ETRI)                                                #
+#                                                                             #
+# This file is included by $(NOS_HOME)/nos/arch/$(MCU)/Makefile.prog.         #
+###############################################################################
+
+msp_bsl_win :
+	@echo "$(TRG).rom ==> $(PLATFORM) by MSP430-BSL"
+	$(NOS_HOME)/tools/msp430-tools/msp430-bsl/win/msp430-bsl.exe $(TARGET) -c $(PORTNO) -r -e -I -p $(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+msp_bsl_linux :
+	@echo "$(TRG).rom ==> $(PLATFORM) by MSP430-BSL"
+	$(NOS_HOME)/tools/msp430-tools/msp430-bsl/msp430-bsl $(TARGET) -c $(port) -r -e -I -p $(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+msp_bsl_darwin :
+	@echo "$(TRG).rom ==> $(PLATFORM) by MSP430-BSL"
+	$(NOS_HOME)/tools/msp430-tools/msp430-bsl/msp430-bsl $(TARGET) -c $(port) -r -e -I -p $(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+msp_uif :
+	@echo "$(TRG).rom ==> $(PLATFORM) by MSP-FET430UIF"
+ifeq ($(OS),Linux)
+	LD_LIBRARY_PATH=$(NOS_HOME)/tools/msp430-tools/MSP430.DLLv3/$(OS) mspdebug tilib -d $(port)
+else ifeq ($(OS),Cygwin)
+	$(NOS_HOME)/tools/msp430-tools/mspdebug-0.19/mspdebug.exe tilib -d COM$(COMNO)
+endif
+	@echo "================== Program Download Finished =================="
+
+cooja :
+	@echo "$(TRG).elf ==> $(TRG).sky, a Cooja-compatible extension"
+	$(CP) $(TRG).elf $(PWD)/$(TRG).sky
+	@echo "================== File conversion Finished =================="

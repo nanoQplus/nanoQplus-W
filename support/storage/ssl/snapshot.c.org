@@ -1,0 +1,573 @@
+/************************************************************************/
+/*                                                                      */
+/*  PROJECT : Flash Memory Management S/W for ETRI Nano OS              */
+/*  MODULE  : SSL (Snapshot Support Layer)                              */
+/*  FILE    : snapshot2.c                                               */
+/*  PURPOSE : Code for saving/restoring snapshot images                 */
+/*                                                                      */
+/*----------------------------------------------------------------------*/
+/*  Authors : Zeen Information Technologies, Inc.                       */
+/*            (info@zeen.snu.ac.kr)                                     */
+/*----------------------------------------------------------------------*/
+/*  The copyright of this software is subject to the copyright of ETRI  */
+/*  Nano OS. For more information, please contact authorities of ETRI.  */
+/*----------------------------------------------------------------------*/
+/*  REVISION HISTORY (Ver 1.0)                                          */
+/*                                                                      */
+/*  - 2016.03.20 [Sung-Kwan Kim] : First writing                        */
+/*                                                                      */
+/************************************************************************/
+
+#include "kconf.h"
+#ifdef SSL_M
+
+#include "fd_config.h"
+#include "fd_if.h"
+#include "fd_utils.h"
+#include "snapshot.h"
+#include "nand_flash_io.h"
+#include "nor_flash_io.h"
+#include "reg_restore.h"
+
+/*----------------------------------------------------------------------*/
+/*  Constant & Macro Definitions (Non-Configurable... DO NOT EDIT)      */
+/*----------------------------------------------------------------------*/
+
+#define SSL_DEBUG_MSG       1               /* 0 or 1 (default is 0) */
+#define CHECK_RESTORE_MARK  0
+
+#define SSL_SIGNITURE       0xE5A60000
+#define RESTORE_MARK        0xFEB10FE0
+
+#define SSL_HEADER_SIZE     sizeof(ssl_header_t)
+#define RESTORE_MARK_SIZE   sizeof(ssl_restore_mark_t)
+
+#define VALID_HEADER(h)     ((h)->signature  == ssl.signiture ||        \
+                             (h)->signature2 == ssl.signiture)
+
+enum SSL_SESSION_STATE {
+    SSL_CLOSED                  = 0,
+    SSL_OPEN_WITH_SNAPSHOT      = 1,    /* there's a snapshot to restore */
+    SSL_OPEN_WITH_NO_SNAPSHOT   = 2     /* there's no snapshot to restore */
+};
+
+/*----------------------------------------------------------------------*/
+/*  Type Definitions                                                    */
+/*----------------------------------------------------------------------*/
+
+/* SSL header structure on flash;
+   the first page of every block starts with this header */
+
+typedef struct {
+    uint32_t        signature;      /* unique signature for this header */
+    uint32_t        signature2;     /* duplicated (= signature) */
+    uint32_t        seq;            /* ever increasing sequence number */
+    uint32_t        seq2;           /* duplicated (= seq) */
+    uint32_t        seq3;           /* duplicated (= seq) */
+    uint32_t        start_block;    /* start block number of the snapshot */
+    uint32_t        start_block2;   /* duplicated (= start_block) */
+    uint32_t        start_block3;   /* duplicated (= start_block) */
+} ssl_header_t;
+
+/* SSL structure of an instance of snapshot data on flash;
+   should be block aligned, i.e., a new snapshot data should start to be 
+   stored in a new block */
+
+typedef struct {
+    ssl_header_t    header;
+    snapshot_t      snapshot;
+    uint32_t        snapshot_addr;
+} ssl_struct_t;
+
+/* SSL data structure on flash memory that marks the last snapshot has been
+   already restored */
+
+typedef struct {
+    ssl_header_t    header;
+    uint32_t        mark;           /* restore mark */
+    uint32_t        mark2;          /* duplicated (= mark) */
+} ssl_restore_mark_t;
+
+/* SSL session structure */
+
+typedef struct {
+    uint32_t        signiture;      /* SSL signiture */
+    uint8_t         state;          /* SSL session state */
+    uint16_t        chip_id;        /* chip number for CFD device for SSL */
+    uint16_t        part_id;        /* part number for CFD device for SSL */
+    uint32_t        dev_id;         /* CFD device id for the flash partition, 
+                                       where snapshot data is stored */
+    flash_dev_spec_t  dev_info;     /* device info for the flash partition */
+
+    uint32_t        seq;            /* sequence no. for current snapshot */
+    uint32_t        start_block;    /* start block no. for current snapshot */
+    uint32_t        phy_block[2];   /* physical block numbers */
+} ssl_session_t;
+
+/*----------------------------------------------------------------------*/
+/*  External Variable Definitions                                       */
+/*----------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------*/
+/*  Local Variable Definitions                                          */
+/*----------------------------------------------------------------------*/
+
+static ssl_session_t  ssl       __SSL_EXTRA_MEM_ATTR = {SSL_CLOSED, };
+static uint32_t       buf_index __SSL_EXTRA_MEM_ATTR;
+static uint8_t        __buf[2][MAX_PAGE_SIZE];
+
+/*----------------------------------------------------------------------*/
+/*  Local Function Declarations                                         */
+/*----------------------------------------------------------------------*/
+
+static __inline__ uint32_t 
+GET_ERROR_FREE_NUMBER(uint32_t n1, uint32_t n2, uint32_t n3);
+
+static int32_t  get_last_snapshot_location(uint32_t *start_block);
+static uint8_t *get_buf(void);
+static uint16_t get_build_time(void);
+
+
+/*======================================================================*/
+/*  External Function Definitions                                       */
+/*======================================================================*/
+
+extern int32_t 
+ssl_open(uint16_t chip_id, uint16_t part_id)
+{
+    int32_t      err;
+    uint8_t      *pbuf;
+    uint32_t     block;
+    
+    ssl_struct_t        *si;
+
+#if (CHECK_RESTORE_MARK == 1)
+    ssl_restore_mark_t  *sr;
+#endif
+
+    /* dev_id for the flash partition designated for snapshot storage */
+    ssl.dev_id = SET_DEV_ID(LFD_BLK_DEVICE_RAW, 
+                            SET_RAWDEV_SERIAL(chip_id, part_id));
+
+    /* open a logical flash device designated for snapshot storage */
+    err = fd_open(ssl.dev_id);
+    if (err) return(SSL_OPEN_FAIL);
+    
+    err = fd_get_device_info(ssl.dev_id, &ssl.dev_info);
+    if (err) {
+        fd_close(ssl.dev_id);
+        return(SSL_OPEN_FAIL);
+    }
+
+    /* initialize global variables */
+    ssl.signiture = SSL_SIGNITURE + get_build_time();
+    ssl.chip_id   = chip_id;
+    ssl.part_id   = part_id;
+    buf_index     = 0;
+
+#if (SSL_DEBUG_MSG == 1)
+    printf("[SSL] flash partition used for snapshots:\r\n");
+    printf("--------------------------------------------------\r\n");
+    printf("chip_number        = %d (%s flash)\r\n", 
+           (int)chip_id, (ssl.dev_info.type == NOR_FLASH ? "NOR" : "NAND"));
+    printf("partition_number   = %d\r\n", (int)part_id);
+    printf("--------------------------------------------------\r\n");
+    printf("page_size          = %d\r\n", (int)ssl.dev_info.page_size);
+    printf("data_size          = %d\r\n", (int)ssl.dev_info.data_size);
+    printf("spare_size         = %d\r\n", (int)ssl.dev_info.spare_size);
+    printf("sectors_per_page   = %d\r\n", (int)ssl.dev_info.sectors_per_page);
+    printf("pages_per_block    = %d\r\n", (int)ssl.dev_info.pages_per_block);
+    printf("block_size         = %d\r\n", (int)ssl.dev_info.block_size);
+    printf("num_blocks         = %d\r\n", (int)ssl.dev_info.num_blocks);
+    printf("--------------------------------------------------\r\n");
+#endif
+
+    /* now, identify information about the last snapshot on flash memory;
+       to do that, locate the last snapshot on flash memory first */
+    err = get_last_snapshot_location(&block);
+    if (err) {
+        /* no valid snapshot found */
+        
+        if (err == SSL_ERROR) {
+            /* due to some reason, the SSL structures on flash have been 
+               corrupted; reset (erase all blocks) here */
+            ssl_reset();
+        }
+
+        /* reset variables for the current session */
+        ssl.seq         = 0;
+        ssl.start_block = 0;
+        ssl.state       = SSL_OPEN_WITH_NO_SNAPSHOT;
+    }
+    else {
+        /* read ssl_struct_t of the last snapshot that is saved in the
+           first page of the snapshot data on flash memory */
+        pbuf = get_buf();
+        si = (ssl_struct_t *)pbuf;
+
+        err = fd_read_page(ssl.dev_id, block, 0, pbuf, NULL);
+        if (err) goto error;
+        
+        /* according to the information about the last snapshot data 
+           on flash memory, update variables for the current session */
+        ssl.seq         = si->header.seq;
+        ssl.start_block = si->header.start_block;
+        ssl.state       = SSL_OPEN_WITH_SNAPSHOT;
+
+#if (CHECK_RESTORE_MARK == 1)
+        /* finally, check if the current snapshot (last snapshot) has been
+           restored or not, by reading the next page of the header page */
+        sr = (ssl_restore_mark_t *)pbuf;
+        
+        err = fd_read_bytes(ssl.dev_id, block, 1, RESTORE_MARK_SIZE, pbuf);
+        if (err) goto error;
+        
+        if (VALID_HEADER(&sr->header) && 
+            GET_ERROR_FREE_NUMBER(sr->header.seq, sr->header.seq2, sr->header.seq3) == ssl.seq &&
+            (sr->mark == RESTORE_MARK || sr->mark2 == RESTORE_MARK)) {
+        
+            /* found a mark indicating this snapshot has been restored before;
+               this snapshot should not be restored again */
+            ssl.state = SSL_OPEN_WITH_NO_SNAPSHOT;
+        }
+#endif
+    }
+    
+    /* get physical block numbers for logical block 0 & 1 */
+    err = fd_get_phy_block(ssl.dev_id, 0, &ssl.phy_block[0]);
+    if (err) goto error;
+    
+    err = fd_get_phy_block(ssl.dev_id, 1, &ssl.phy_block[1]);
+    if (err) goto error;
+
+    return(SSL_SUCCESS);
+
+error:
+    ssl.state = SSL_CLOSED;
+    fd_close(ssl.dev_id);
+    return(SSL_ERROR);
+}
+
+
+extern int32_t
+ssl_close(void)
+{
+    int32_t err;
+    
+    if (ssl.state == SSL_CLOSED) return(SSL_DEVICE_NOT_OPEN);
+    
+    err = fd_close(ssl.dev_id);
+    if (err) return(SSL_ERROR);
+    
+    ssl.state = SSL_CLOSED;
+        
+    return(SSL_SUCCESS);
+}
+
+
+extern int32_t
+ssl_reset(void)
+{
+    int32_t err;
+    
+    if (ssl.state == SSL_CLOSED) return(SSL_DEVICE_NOT_OPEN);
+    
+    err = fd_erase_partition(ssl.chip_id, ssl.part_id);
+    if (err) return(SSL_ERROR);
+    
+    return(SSL_SUCCESS);
+}
+
+
+extern int32_t
+ssl_save(snapshot_t *snapshot)
+{
+    uint8_t  *pbuf;
+    uint16_t  p;
+    uint32_t  remain, copied, n;
+    
+    ssl_struct_t *si;
+    
+    if (ssl.state == SSL_CLOSED) return(SSL_DEVICE_NOT_OPEN);
+    if (snapshot == NULL) return(SSL_ERROR);
+
+    /* update session variables to prepare for a new snapshot */
+    ssl.seq++;
+    ssl.start_block = 0;
+
+    /* now, ssl.seq is the new sequence number for this new snapshot data; 
+       ssl.start_block indicates the starting block where the new snapshot data
+       is going to be saved */
+    
+    /* fill ssl_struct_t for a new snapshot */
+    pbuf = get_buf();
+    si = (ssl_struct_t *)pbuf;
+    
+    si->header.signature    = ssl.signiture;
+    si->header.signature2   = ssl.signiture;
+    si->header.seq          = ssl.seq;
+    si->header.seq2         = ssl.seq;
+    si->header.seq3         = ssl.seq;
+    si->header.start_block  = ssl.start_block;
+    si->header.start_block2 = ssl.start_block;
+    si->header.start_block3 = ssl.start_block;
+    
+    MEMCPY(&si->snapshot, snapshot, sizeof(snapshot_t));
+    si->snapshot_addr = (uint32_t)snapshot;
+
+    /* save ssl_struct_t to flash memory */
+    if (fd_erase(ssl.dev_id, 0) != FM_SUCCESS) {
+        return(SSL_ERROR);
+    }
+
+    if (fd_write_page(ssl.dev_id, 0, 0, pbuf, NULL, 1) != FM_SUCCESS) {
+        return(SSL_ERROR);
+    }
+    
+    /* save memory contents */
+    if (fd_erase(ssl.dev_id, 1) != FM_SUCCESS) {
+        return(SSL_ERROR);
+    }
+    
+    remain = snapshot->mem_desc.num_bytes;
+    copied = 0;
+    p = 0;
+    
+    while (remain > 0) {
+        n = MIN(ssl.dev_info.data_size, remain);
+        if (n == ssl.dev_info.data_size) {
+            /* in this case, we don't need to copy memory data to a 
+               temporary buffer; just save the memory data directly 
+               from the memory */
+            pbuf = (uint8_t *)(snapshot->mem_desc.start_addr + copied);
+        }
+        else {
+            /* copy memory data to a temporary buffer */
+            pbuf = get_buf();
+            MEMCPY(pbuf, snapshot->mem_desc.start_addr + copied, n);
+        }
+        
+        if (fd_write_page(ssl.dev_id, 1, p, pbuf, NULL, 1) != FM_SUCCESS) {
+            return(SSL_ERROR);
+        }
+
+        copied += n;
+        remain -= n;
+        p++;
+    }
+    
+    fd_sync(ssl.dev_id);
+
+#if (SSL_DEBUG_MSG == 1)
+    printf("[SSL] snapshot saved successfully.\r\n");
+    printf("      (seq = %d, size = %d KB)\r\n",
+           (int)ssl.seq, (int)(snapshot->mem_desc.num_bytes >> 10));
+#endif
+
+    return(SSL_SUCCESS);
+}
+
+
+extern int32_t
+ssl_restore(snapshot_t *__snapshot)
+{
+    static int32_t   err        __SSL_EXTRA_MEM_ATTR;
+    static uint8_t  *pbuf       __SSL_EXTRA_MEM_ATTR;
+    static uint16_t  p          __SSL_EXTRA_MEM_ATTR;
+    static uint32_t  k          __SSL_EXTRA_MEM_ATTR;
+    static uint32_t  remain     __SSL_EXTRA_MEM_ATTR;
+    static uint32_t  copied     __SSL_EXTRA_MEM_ATTR;
+    static uint32_t  n          __SSL_EXTRA_MEM_ATTR;
+
+    static snapshot_t         *snapshot __SSL_EXTRA_MEM_ATTR;
+    static ssl_struct_t       *si       __SSL_EXTRA_MEM_ATTR;
+    static ssl_restore_mark_t  sr       __SSL_EXTRA_MEM_ATTR;
+
+    snapshot = __snapshot;
+    
+    if (ssl.state == SSL_CLOSED) return(SSL_DEVICE_NOT_OPEN);
+    if (ssl.state == SSL_OPEN_WITH_NO_SNAPSHOT) return(SSL_NO_VALID_SNAPSHOT);
+    if (snapshot == NULL) return(SSL_ERROR);
+
+    /* read ssl_struct_t of the last snapshot that was saved in the
+       first page of the snapshot data on flash memory */
+    pbuf = get_buf();
+    si = (ssl_struct_t *)pbuf;
+
+    err = fd_read_page(ssl.dev_id, 0, 0, pbuf, NULL);
+    if (err) return(SSL_ERROR);
+    
+    /* fill return values in 'snapshot' */
+    MEMCPY(snapshot, &si->snapshot, sizeof(snapshot_t));
+    //__cpu_context_backup_point = si->snapshot_addr + 4;
+
+    /* before restoring memory contents, 
+       save a mark to flash memory to indicate that
+       the current snapshot has been restored */
+    sr.header.signature    = ssl.signiture;
+    sr.header.signature2   = ssl.signiture;
+    sr.header.seq          = ssl.seq;
+    sr.header.seq2         = ssl.seq;
+    sr.header.seq3         = ssl.seq;
+    sr.header.start_block  = ssl.start_block;
+    sr.header.start_block2 = ssl.start_block;
+    sr.header.start_block3 = ssl.start_block;
+    sr.mark                = RESTORE_MARK;
+    sr.mark2               = RESTORE_MARK;
+    
+    /* save the mark to flash memory */
+    err = fd_write_bytes(ssl.dev_id, 0, 1, RESTORE_MARK_SIZE, (uint8_t *)&sr);
+    if (err) return(SSL_ERROR);
+
+    fd_sync(ssl.dev_id);
+
+#if (SSL_DEBUG_MSG == 1)
+    printf("[SSL] snapshot restored successfully.\r\n");
+    printf("      (seq = %d, size = %d KB)\r\n",
+           (int)ssl.seq, (int)(snapshot->mem_desc.num_bytes >> 10));
+#endif
+
+    /* finally, restore memory contents;
+       from now on, DO NOT use the stack;
+       so, function calls are prohibited */
+    remain = snapshot->mem_desc.num_bytes;
+    copied = 0;
+    p = 0;
+    
+    while (remain > 0) {
+        n = MIN(ssl.dev_info.data_size, remain);
+        if (n == ssl.dev_info.data_size) {
+            /* in this case, we don't need to read memory data to a 
+               temporary buffer; just restore the memory data directly 
+               to the target memory */
+            pbuf = (uint8_t *)(snapshot->mem_desc.start_addr + copied);
+        }
+        else {
+            /* read memory data to a temporary buffer */
+            pbuf = __buf[0];
+        }
+        
+        if (ssl.dev_info.type == SLC_NAND_FLASH) {
+            NAND_READ_PAGE(ssl.phy_block[1], p, pbuf, __buf[0] + ssl.dev_info.data_size);
+        }
+        else {
+            NOR_READ_PAGE(ssl.phy_block[1], p, pbuf);
+        }
+        
+        if (n != ssl.dev_info.data_size) {
+            /* we need to copy data from the temporary buffer to the target memory */
+
+            static uint8_t *src __SSL_EXTRA_MEM_ATTR;
+            static uint8_t *dst __SSL_EXTRA_MEM_ATTR;
+            
+            src = pbuf;
+            dst = (uint8_t *)snapshot->mem_desc.start_addr + copied;
+            
+            if (!((uint32_t)src & 0x03) && !((uint32_t)dst & 0x03)) {
+                
+                /* word aligned */
+                for (k = 0; k < n - 3; k += 4) {
+                    *(uint32_t *)(dst + k) = *(uint32_t *)(src + k);
+                }
+                for ( ; k < n; k++) {
+                    *(dst + k) = *(src + k);
+                }
+            }
+            else {
+                for (k = 0; k < n; k++) {
+                    *(dst + k) = *(src + k);
+                }
+            }
+        }
+        
+        copied += n;
+        remain -= n;
+        p++;
+    }
+
+    extern void *pjmp;
+
+    /* at last, restore CPU & IO registers to finish restoring the system context */
+    NOS_DISABLE_GLOBAL_INTERRUPT();
+    __restore_cpu_context(__cpu_context_backup_point);
+    goto *pjmp;
+    NOS_ENABLE_GLOBAL_INTERRUPT();
+
+    return(SSL_SUCCESS);
+}
+
+
+/*======================================================================*/
+/*  Local Function Definitions                                          */
+/*======================================================================*/
+
+static __inline__ uint32_t 
+GET_ERROR_FREE_NUMBER(uint32_t n1, uint32_t n2, uint32_t n3)
+{
+    /* during the process of reading SSL header structures from flash,
+       bit-flip errors may occur because no ECC protection could be used
+       in fd_read_bytes() call; because we use an SLC type NAND or NOR flash,
+       the maximum number of bit-flip errors is one; so, we can get the 
+       original (i.e. error free) number using the following code;
+       note that the numbers n1, n2, n3 are originally the same number that 
+       was stored to flash duplicatively */
+        
+    if (n1 == n2) return(n1);
+    else if (n1 == n3) return(n1);
+    else if (n2 == n3) return(n2);
+    else return(0);     /* error case */
+}
+
+
+static int32_t
+get_last_snapshot_location(uint32_t *start_block)
+{
+    int32_t   err;
+    ssl_header_t ssl_header1, *h1 = &ssl_header1;
+    
+    err = fd_read_bytes(ssl.dev_id, 0, 0, SSL_HEADER_SIZE, (uint8_t *)h1);
+    if (err) return(SSL_ERROR);
+
+    if (! VALID_HEADER(h1)) return(SSL_NO_VALID_SNAPSHOT);
+
+    *start_block = 0;
+    
+    return(SSL_SUCCESS);
+}
+
+
+static uint8_t *
+get_buf(void)
+{
+    uint8_t *pbuf;
+    
+    pbuf = __buf[buf_index];
+    buf_index = 1 - buf_index;
+    
+    return(pbuf);
+}
+
+
+static uint16_t 
+get_build_time(void)
+{
+    uint32_t t;
+
+#if 1
+    static uint8_t *build_time = (uint8_t *)__TIME__;
+
+    t = (build_time[0] - '0') * 100000 +
+        (build_time[1] - '0') * 10000 +
+        (build_time[3] - '0') * 1000 +
+        (build_time[4] - '0') * 100 +
+        (build_time[6] - '0') * 10 +
+        (build_time[7] - '0');
+#else
+    t = 0x695E;
+#endif
+
+    return((uint16_t)t);
+}
+
+
+#endif /* SSL_M */

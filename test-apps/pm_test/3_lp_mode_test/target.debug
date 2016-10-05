@@ -1,0 +1,9 @@
+
+file 10_standby_test1.elf
+
+target extended localhost:4242
+
+load
+
+
+

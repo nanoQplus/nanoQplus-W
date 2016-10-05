@@ -1,0 +1,55 @@
+# -*- mode:Makefile; -*-
+###############################################################################
+# MCU specific Directories(not File), Flags, Defines, ...                     #
+# Author: Duk-Kyun Woo (ETRI)                                                 #
+###############################################################################
+
+#pre-definitions
+PREDEFINES += USE_STDPERIPH_DRIVER
+
+SUPPORT_DIR := $(NOS_HOME)/support/stm32/STM32F4xx_DSP_StdPeriph_Lib_V1.6.1
+SUPPORT_SRCDIR =\
+	$(SUPPORT_DIR)/Libraries/STM32F4xx_StdPeriph_Driver/src
+SUPPORT_INCDIR =\
+	$(SUPPORT_DIR)/Libraries/STM32F4xx_StdPeriph_Driver/inc\
+	$(SUPPORT_DIR)/Libraries/CMSIS/Include\
+	$(SUPPORT_DIR)/Libraries/CMSIS/Device/ST/STM32F4xx/Include
+
+ifeq ($(CONFIG_GCC_TOOLCHAIN),y)
+	#CMSIS files
+	SUPPORT_INCDIR += $(SUPPORT_DIR)/Libraries/CMSIS/Include
+		
+	CC = arm-none-eabi-gcc
+	LD = arm-none-eabi-gcc
+	AR = arm-none-eabi-ar
+	OBJCOPY = arm-none-eabi-objcopy
+	OBJDUMP = arm-none-eabi-objdump
+	SIZE = arm-none-eabi-size
+
+	CPFLAGS =\
+		-mcpu=cortex-m4\
+		-mthumb\
+#		-mthumb-interwork\
+		
+
+	ASFLAGS =\
+		-mcpu=cortex-m4\
+		-mthumb\
+
+	LDFLAGS =\
+		-mcpu=cortex-m4\
+		-mthumb\
+		--specs=nano.specs\
+	
+endif
+
+
+arch_env_check:
+ifeq ("$(wildcard $(SUPPORT_DIR)/*)","")
+	@$(MAKE) -C $(NOS_HOME)/support/stm32 f40x;
+	@echo
+	@echo "########## NanoQplus3: Alert ##########"
+	@echo "STM32F40x library package is installed in $(SUPPORT_DIR). Please, re-run 'make'."
+	@echo;
+	@false;
+endif

@@ -1,0 +1,4 @@
+source "nos/kernel/Kconfig"
+#source "nos/net/Kconfig"
+source "nos/lib/Kconfig"
+source "support/storage/Kconfig"

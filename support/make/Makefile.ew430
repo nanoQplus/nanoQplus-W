@@ -1,0 +1,149 @@
+# -*- mode:Makefile; -*-
+###############################################################################
+# Makefile for IAR Embedded Worbench MSP430                                   #
+# Author: Jongsoo Jeong (ETRI)                                                #
+# Created: 2013. 11. 3.                                                       #
+#                                                                             #
+# This Makefile is included by $(NOS_HOME)/nos/platform/Makefile.             #
+###############################################################################
+
+ifneq ($(ICC430_HOME),)
+	IARBUILD="$(ICC430_HOME)/common/bin/IarBuild.exe"
+	IELFTOOL="$(ICC430_HOME)/arm/bin/ielftool.exe"
+else ifneq ($(IAR_HOME),)
+	IARBUILD="$(IAR_HOME)/common/bin/IarBuild.exe"
+	IELFTOOL="$(IAR_HOME)/arm/bin/ielftool.exe"
+endif
+
+INCLUDES+=$(PWD) $(NOSDIR)
+
+ifneq ($(id),)
+	PREDEFINES+=NODE_ID=$(id)
+endif
+
+NOS_SRCFILES=$(foreach dir,$(NOSDIR),$(wildcard $(dir)/*.c))
+APP_SRCFILES=$(wildcard $(PWD)/*.c)
+
+LIBFILES=$(addsuffix .r43,$(addprefix $(NOS_HOME)/lib/$(MCU_CLASS)/icc430/lib,$(LIB)))
+
+ifeq ($(wildcard $(PWD)/appdir.list),$(PWD)/appdir.list)
+	APP_SRCFILES+=$(foreach dir, $(addprefix $(PWD)/, $(shell cat $(PWD)/appdir.list)), $(wildcard $(dir)/*.c))
+	INCLUDES+=$(addprefix $(PWD)/, $(shell cat $(PWD)/appdir.list))
+endif
+
+all : cygwin_check pkg_check platform_check $(TRG).eww $(TRG).ewp
+	@echo
+	@echo "Building the $(TRG) project..."
+	@$(IARBUILD) $(TRG).ewp -make Debug
+	@$(CP) Debug/Exe/$(TRG).elf $(PWD)/$(TRG).elf
+	@$(CP) Debug/Exe/$(TRG).a43 $(PWD)/$(TRG).hex
+	@$(CP) Debug/Exe/$(TRG).a43 $(PWD)/$(TRG).rom
+	@$(CP) Debug/List/$(TRG).map $(PWD)/$(TRG).map
+	@echo "### NOTE ###"
+	@echo "- '$(TRG).out' has been created."
+	@grep --color=never "bytes of" $(PWD)/$(TRG).map
+
+libs :
+	@make -s -C $(NOS_HOME)/lib/$(MCU_CLASS)/icc430
+
+cygwin_check :
+ifneq ($(findstring CYGWIN, $(shell uname)),CYGWIN)
+	@echo
+	@echo "### NOTE ###"
+	@echo "Building applications using IAR tools requires Cygwin environment."
+	@echo
+	@false
+endif
+ifeq ($(IARBUILD),)
+	@echo
+	@echo "### NOTE ###"
+	@echo "Neither ICC430_HOME nor IAR_HOME is not specified."
+	@echo
+	@false
+endif
+
+$(TRG).eww :
+	@echo
+	@echo "Making a workspace for IAR IDE..."
+	@$(CP) $(NOS_HOME)/support/make/eww.template $(TRG).eww.tmp
+	@xmlstarlet ed --inplace --update "/workspace/project/path" -v "$(shell cygpath -a -m "$(shell readlink -f $(TRG).ewp)")" $(TRG).eww.tmp
+	@$(MV) $(TRG).eww.tmp $(PWD)/$(TRG).eww
+
+$(TRG).ewp : $(PWD)/kconf.h
+	@rm -rf *
+	@echo
+	@echo "Making the $(TRG) project..."	
+	@$(CP) $(NOS_HOME)/support/make/ew430.ewp.template $(TRG).ewp.tmp
+
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='General']/data/option[name='OGChipSelectMenu']/state" -v "$(CHIPNAME_LONG)" $(TRG).ewp.tmp
+
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='XLINK']/data/option[name='OutputFile']/state" -v "$(TRG).elf" $(TRG).ewp.tmp
+
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='XLINK']/data/option[name='ExtraOutputFile']/state" -v "$(TRG).a43" $(TRG).ewp.tmp
+
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='XLINK']/data/option[name='XclFile']/state" -v "$(XCLFILE)" $(TRG).ewp.tmp
+
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='General']/data/option[name='GStackSize2']/state" -v "$(STACK_SIZE)" $(TRG).ewp.tmp
+
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='General']/data/option[name='GHeapSize2']/state" -v "$(HEAP_SIZE)" $(TRG).ewp.tmp
+
+	@echo
+	@echo "Adding predefines..."
+	@for d in $(PREDEFINES); do \
+		echo " $$d";\
+		xmlstarlet ed --inplace --subnode "/project/configuration/settings[name='ICC430']/data/option[name='CCDefines']" -t elem -n "state" -v "$$d" $(TRG).ewp.tmp ;\
+	done
+
+	@echo
+	@echo "Adding include paths..."
+	@for d in $(INCLUDES); do \
+		original_path=`readlink -f $$d`; \
+		wd=`cygpath -a -m "$$original_path"` ; \
+		echo " $$wd" ; \
+		xmlstarlet ed --inplace --subnode "/project/configuration/settings[name='ICC430']/data/option[name='newCCIncludePaths']" -t elem -n "state" -v "$$wd" $(TRG).ewp.tmp ;\
+	done
+
+	@echo
+	@echo "Adding DLIB..."
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='General']/data/option[name='RTConfigPath']/state" -v "$(RTCONFPATH)" $(TRG).ewp.tmp
+	@xmlstarlet ed --inplace --update "/project/configuration/settings[name='General']/data/option[name='RTLibraryPath']/state" -v "$(RTLIBPATH)" $(TRG).ewp.tmp
+
+	@echo
+	@echo "Adding library files..."
+	@for f in $(LIBFILES); do\
+		if [ -f $$f ]; then\
+			wf=`cygpath -a -m $$f`;\
+			echo " $$f";\
+			xmlstarlet ed --inplace --subnode "/project/group[name='lib']" -t elem -n "file" -v "" $(TRG).ewp.tmp;\
+			xmlstarlet ed --inplace --subnode "/project/group[name='lib']/file[last()]" -t elem -n "name" -v "$$wf" $(TRG).ewp.tmp;\
+		fi;\
+	done
+
+	@echo
+	@echo "Adding NanoQplus source files..."
+	@for f in $(NOS_SRCFILES); do \
+		wf=`cygpath -a -m $$f` ; \
+		echo " $$f" ; \
+		xmlstarlet ed --inplace --subnode "/project/group[name='nos']" -t elem -n "file" -v "" $(TRG).ewp.tmp ; \
+		xmlstarlet ed --inplace --subnode "/project/group[name='nos']/file[last()]" -t elem -n "name" -v "$$wf" $(TRG).ewp.tmp ; \
+	done
+
+	@echo
+	@echo "Adding user application source files of the $(TRG) project..."
+	@for f in $(APP_SRCFILES); do \
+		wf=`cygpath -a -m $$f` ; \
+		echo " $$f" ; \
+		xmlstarlet ed --inplace --subnode "/project/group[name='app']" -t elem -n "file" -v "" $(TRG).ewp.tmp ;\
+		xmlstarlet ed --inplace --subnode "/project/group[name='app']/file[last()]" -t elem -n "name" -v "$$wf" $(TRG).ewp.tmp ;\
+	done
+	@$(MV) $(TRG).ewp.tmp $(TRG).ewp
+
+print :
+	@echo "PWD: $(PWD)"
+	@echo "APP_SRCFILES: $(APP_SRCFILES)"
+
+toolchain_check :
+ifeq ($(shell which "$(shell cygpath $(IARBUILD))"),)
+	@echo "'$(IARBUILD)' is not found."
+	@false
+endif

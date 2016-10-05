@@ -1,0 +1,205 @@
+# -*- mode:Makefile; -*-
+###############################################################################
+# Makefile for GNUC                                                           #
+# Author: Haeyong Kim (ETRI)                                                  #
+###############################################################################
+
+### Variables
+CCV = $(shell $(CC) -dumpversion)
+ifeq ($(OS),Cygwin)
+	MAP = "$(shell cygpath -a -m "$(shell readlink -f "$(PWD)/$(TRG).map")")"
+else
+	MAP = $(PWD)/$(TRG).map
+endif	
+NOSLIBDIR := $(NOS_HOME)/archive
+
+
+### Pre-definitions
+PREDEFINES += USE_STDPERIPH_DRIVER
+
+
+### Set NanoQplus Source Directories
+ifeq ($(wildcard $(PWD)/appdir.list),)
+	SRCDIR := $(PWD) $(NOSDIR)
+else
+	SRCDIR := $(PWD) $(addprefix $(PWD)/, $(shell cat $(PWD)/appdir.list)) $(NOSDIR)
+endif
+
+
+### Set NanoQplus Library Directories
+NOSLIB := $(NOSLIB) 
+
+
+### Source Search Path for All Prerequisites
+VPATH := $(SRCDIR)\
+	$(SUPPORT_SRCDIR)
+
+	
+### Set All Include Directories
+ifeq ($(OS),Cygwin)
+	INC := $(foreach dir,$(SRCDIR) ,-I"$(shell cygpath -a -m "$(shell readlink -f $(dir))")")\
+		$(foreach dir,$(SUPPORT_INCDIR),-I"$(shell cygpath -a -m "$(shell readlink -f $(dir))")")
+else
+	INC := $(foreach dir,$(SRCDIR),-I$(dir))\
+		$(foreach dir,$(SUPPORT_INCDIR),-I$(dir))
+endif
+
+	
+### File lists
+SRCS := $(foreach dir,$(SRCDIR),$(wildcard $(dir)/*.c)) $(filter %.c,$(SUPPORT_SRCFILES))
+ASMS := $(foreach dir,$(SRCDIR),$(wildcard $(dir)/*.s)) $(filter %.s,$(SUPPORT_SRCFILES))
+OBJS := $(notdir $(SRCS:.c=.o)) $(notdir $(ASMS:.s=.o))
+LIBSRCS := $(foreach dir,$(NOSLIB),$(wildcard $(dir)/*.c) $(wildcard $(dir)/*.s))
+LIBOBJS := $(filter %.o,$(notdir $(LIBSRCS:.c=.o)) $(notdir $(LIBSRCS:.s=.o)))
+
+
+### Complier and Linker Flags
+
+CPFLAGS +=\
+	-c\
+	-g\
+	-O0\
+	-std=gnu99\
+	-Wall\
+	$(foreach def,$(PREDEFINES),-D$(def))
+#	-Wa,-ahlms=$(notdir $(<:.c=.lst))\
+
+
+ASFLAGS =\
+	-c\
+#	-Wa,-ahlms=$(notdir $(<:.s=.lst))\
+
+LDFLAGS +=\
+	-Wl,-Map,$(MAP),--cref,--gc-sections\
+	-Xlinker --start-group\
+	-lc $(addprefix -l,$(subst .a,,$(subst lib,,$(notdir $(wildcard $(NOSLIBDIR)/*.a)))))\
+	-Xlinker --end-group\
+
+#	-L"$(shell cygpath -a -m $(NOS_HOME)/archive)"\
+
+	
+all : arch_env_check platform_env_check $(TRG).lst $(TRG).hex $(TRG).bin
+	@echo
+	@echo "########## NanoQplus3: Build done. ##########"
+	@echo Flash\(bytes\) = 'text' + 'data'
+	@$(SIZE) $(TRG).elf
+	@echo
+#	@$(CP) $(TRG).elf /cygdrive/e/NOS/STM32F407_Flash_Loader/nos3.elf
+	@echo	
+
+$(TRG).bin : $(TRG).elf
+ifeq ($(OS),Cygwin)
+	-@$(OBJCOPY) -O binary\
+		"$(shell cygpath -a -m "$(shell readlink -f "$(<)")")"\
+		"$(shell cygpath -a -m "$(shell readlink -f "$(PWD)/$(@)")")"
+else
+	-@$(OBJCOPY) -O binary $< $(PWD)/$@
+endif
+
+$(TRG).hex : $(TRG).elf
+ifeq ($(OS),Cygwin)
+	-@$(OBJCOPY) -O ihex\
+		"$(shell cygpath -a -m "$(shell readlink -f "$(<)")")"\
+		"$(shell cygpath -a -m "$(shell readlink -f "$(PWD)/$(@)")")"
+else
+	-@$(OBJCOPY) -O ihex $< $(PWD)/$@
+endif
+
+$(TRG).lst : $(TRG).elf
+	-@$(OBJDUMP) -h -S $< > $(PWD)/$@
+
+$(TRG).elf : $(OBJS)
+	@echo
+	@echo "########## NanoQplus3: Compile log ##########"
+	@cat result.log
+	@$(RM) result.log
+	-$(LD) $(OBJS) -o $@ $(LDFLAGS) 2>> result.log
+	@if [ `ls -l result.log | awk '{print $$5}'` -gt 0 ];\
+	then\
+		echo;\
+		echo "########## NanoQplus3: Linking log ##########";\
+		cat result.log;\
+		echo;\
+		false;\
+	fi
+	@$(CP) $@ $(PWD)/$@
+
+	
+lib: $(LIBOBJS)
+	@if [ `ls -l result.log | awk '{print $$5}'` -gt 0 ];\
+	then\
+		echo;\
+		echo "########## NanoQplus3: Build log ##########";\
+		cat result.log;\
+		echo;\
+#		false;\
+	fi
+ifneq ("$(wildcard $(NOSLIBDIR)/libnos.a)","")
+	@echo
+	@echo "########## NanoQplus3: Alert ##########"
+	@echo "$(NOS_HOME)/archive/libnos.a exists. Run 'make libclean' first."
+	@echo	
+	@false
+endif
+	$(MD) $(NOSLIBDIR)
+	$(AR) $(ARFLAGS) libnos.a $(LIBOBJS)
+	$(MV) libnos.a $(NOSLIBDIR)/
+	@echo
+	@echo "########## NanoQplus3: Library Build Done. ##########"
+	@echo
+
+	
+libclean: 
+	$(RD) $(NOSLIBDIR)
+
+	
+%.o : %.c $(PWD)/kconf.h
+	@$(RM) $@
+ifeq ($(OS),Cygwin)
+	-$(CC) $(CPFLAGS) \
+	$(INC) \
+	"$(shell cygpath -a -m "$(shell readlink -f $(<))")" -o $@ 2>> result.log
+else
+	-$(CC) $(CPFLAGS) \
+	$(INC) \
+	$< -o $@ 2>> result.log
+endif
+
+%.o : %.s $(PWD)/kconf.h
+	@$(RM) $@
+ifeq ($(OS),Cygwin)
+	-$(CC) $(ASFLAGS) \
+	$(INC) \
+	-x assembler-with-cpp "$(shell cygpath -a -m "$(shell readlink -f $(<))")" -o $@ 2>> result.log
+else
+	-$(CC) $(ASFLAGS) \
+	$(INC) \
+	-x assembler-with-cpp $< -o $@ 2>> result.log
+endif
+
+print :
+	@echo ""
+	@echo "SRCDIR=$(SRCDIR)"
+	@echo "SUPPORT_SRCDIR=$(SUPPORT_SRCDIR)"
+	@echo "SUPPORT_SRCFILE=$(SUPPORT_SRCFILES)"
+	@echo "INC=$(INC)"
+	@echo "SRCS=$(SRCS)"
+	@echo "ASMS=$(ASMS)"
+	@echo "OBJS=$(OBJS)"
+	@echo "LIBOBJS=$(LIBOBJS)"
+	@echo ""
+
+# CyaSSL related
+#PREDEFINES += SIZEOF_LONG_LONG=8
+#PREDEFINES += $(APP_PREDEFINES)	
+#realpath
+#abspath
+#%.o:
+#	@if [ ! -f $@ ];\
+#	then\
+#		echo;\
+#		echo "### BUILD LOG ###";\
+#		cat result.log;\
+#		echo;\
+#		false;\
+#	fi

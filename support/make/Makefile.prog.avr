@@ -1,0 +1,114 @@
+# -*- mode:Makefile; -*-
+###############################################################################
+# Flash downloader configuration for AVR microcontrollers                     #
+# Author: Jongsoo Jeong (ETRI)                                                #
+#                                                                             #
+# This Makefile is included by $(NOS_HOME)/nos/arch/$(MCU)/Makefile.prog      #
+###############################################################################
+
+avrdude_lpt :
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE"
+	@echo ""
+	avrdude -c $(TARGET) -P $(port) $(FLAGS) -U flash:w:$(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+avrdude_lpt_bl:
+	@echo "$(NOS_HOME)/nos-bootloader/$(BLIMG) ==> bootloader section of $(MCU) by AVRDUDE"
+	$(CP) $(NOS_HOME)/nos-bootloader/$(BLIMG) .
+	avrdude -c $(TARGET) -P $(port) -u -U lock:w:0x3f:m -U efuse:w:0xff:m  -U hfuse:w:0xd8:m -U lfuse:w:0xff:m
+	avrdude -c $(TARGET) -P $(port) -D -V -U flash:w:$(BLIMG)
+	$(RM) $(BLIMG)
+	@echo "================= Bootloader Download Finished ================"
+
+avrdude_lpt_sm:
+	@echo "Channel: $(RFCHANNEL), PAN ID: $(pan), Node ID: $(short) ==> EEPROM of $(MCU) by AVRDUDE"
+	avrdude -c $(TARGET) -P $(port) -U eeprom:w:$(RFCHANNEL),$(PAN_L),$(PAN_H),$(SHORT_L),$(SHORT_H),0xff:m
+	@echo "=========== Static MAC Information Download Finished =========="
+
+ponyprog : 
+	@echo "$(TRG).rom ==> $(MCU) by PonyProg2000" 
+	@echo -e "SELECTDEVICE $(MCU)\nLOAD-PROG $(TRG).rom\nWRITE-PROG" > $(TRG).e2s 
+	@"$(PONY_HOME)/PonyProg2000.exe" $(TRG).e2s 
+	@$(RM) $(TRG).e2s
+	@echo "================== Program Download Finished =================="
+
+avrdude_usbasp :
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE through USBasp"
+	@echo ""
+	avrdude -c $(TARGET) -U $(FLAGS) flash:w:$(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+avrdude_usbasp_bl:
+	@echo "$(NOS_HOME)/nos-bootloader/$(BLIMG) ==> bootloader section of $(MCU) by AVRDUDE through USBasp"
+	@cp $(NOS_HOME)/nos-bootloader/$(BLIMG) .
+	avrdude -c $(TARGET) -u -U lock:w:0x3f:m -U efuse:w:0xff:m  -U hfuse:w:0xd8:m -U lfuse:w:0xff:m
+	avrdude -c $(TARGET) -D -V -U flash:w:$(BLIMG)
+	@rm $(BLIMG)
+	@echo "================= Bootloader Download Finished ================"
+
+avrdude_usbasp_sm:
+	@echo "Channel: $(RFCHANNEL), PAN ID: $(pan), Node ID: $(short) ==> EEPROM of $(MCU) by AVRDUDE through USBasp"
+	avrdude -c $(TARGET) -U eeprom:w:$(RFCHANNEL),$(PAN_L),$(PAN_H),$(SHORT_L),$(SHORT_H),0xff:m
+	@echo "=========== Static MAC Information Download Finished =========="
+
+# In order to support USBasp in Ubuntu Linux, super user previlige is required.
+avrdude_usbasp_sudo:
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE through USBasp"
+	@echo ""
+	sudo avrdude -c $(TARGET) -e -U flash:w:$(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+#ISP through serial port
+avrdude_com :
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE through $(port)" 
+	@echo ""
+	avrdude -c $(TARGET) -P $(port) $(FLAGS) -U flash:w:$(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+avrdude_tty :
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE through $(port)"
+	@echo ""
+	avrdude -c $(TARGET) -P $(port) $(FLAGS) -V -U flash:w:$(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+avrdude_usb :
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE through $(port)"
+	@echo ""
+	avrdude -c $(TARGET) -P $(port) $(FLAGS) -U flash:w:$(TRG).rom
+	@echo "================== Program Download Finished =================="
+
+#mib510 does not support read or write. only terminal mode is available for eeprom.
+eeprom_write : 
+mac_info :
+	avrdude -c $(TARGET) -P $(port) -U eeprom:w:$(ch),$(PAN_L),$(PAN_H),$(SHORT_L),$(SHORT_H):m
+
+eeprom_read : 
+	avrdude -c $(TARGET) -P $(port) -U eeprom:r:$(TRG).eep:d
+
+uisp_com :
+	@echo "$(TRG).rom ==> $(MCU) by UISP"
+	@echo ""
+	$(NOS_HOME)/tools/uisp/uisp.exe -dprog=mib510 -dserial=/dev/ttyS$(PORTNO) -dpart=$(MCU) --wr_fuse_e=ff --erase --upload if=$(TRG).rom 
+	@echo "================== Program Download Finished =================="
+
+uisp_lpt :
+	@echo "$(TRG).rom ==> $(MCU) by UISP"
+	@echo ""
+	$(NOS_HOME)/tools/uisp/uisp.exe -dprog=stk200 -dlpt=0x378 -dpart=$(MCU) --wr_fuse_e=ff --erase --upload if=$(TRG).rom 
+	@echo "================== Program Download Finished =================="
+
+
+
+#JTAG ICE mk-II 
+avrdude_jtag :
+	@echo "$(TRG).rom ==> $(MCU) by AVRDUDE through JTAG"
+	@echo "Note that libusb native driver or libusb filter driver with Jungo AVR studio driver has been installed."
+	avrdude -c $(TARGET) -P usb $(FLAGS) -U flash:w:$(TRG).rom
+	@echo  "================== Program Download Finished =================="
+
+#ISP through parallel port
+#To let avrdude or uisp use parallel port , 
+#you must run $(NOS_HOME)/tools/avrdude/giveio/install_giveio.bat
+# lpt1:0x378(default), lpt2:0x278, lpt3:0x3BC(some of laptop)
+giveio :
+	$(NOS_HOME)/tools/avrdude/giveio/install_giveio.bat

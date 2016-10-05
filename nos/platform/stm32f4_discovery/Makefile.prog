@@ -1,0 +1,12 @@
+# -*- mode:Makefile; -*-
+
+burn :
+	@echo "Usage: make burn"
+
+ifeq ($(OS),Cygwin)
+	$(NOS_HOME)/tools/stlink/bin/st-flash write *.bin 0x8000000
+else ifeq ($(OS),Linux)
+	sudo $(NOS_HOME)/tools/stlink/bin/st-flash write *.bin 0x8000000
+else ifeq ($(OS),Mingw)
+	$(NOS_HOME)/tools/stlink/bin/st-flash write *.bin 0x8000000
+endif

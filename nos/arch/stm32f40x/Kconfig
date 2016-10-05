@@ -1,0 +1,12 @@
+config MCU_NAME
+	string
+	default "stm32f40x"
+
+choice
+	prompt "Toolchain"
+	default GCC_TOOLCHAIN
+	config GCC_TOOLCHAIN
+		bool "GCC"
+
+endchoice
+	

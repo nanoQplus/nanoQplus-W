@@ -1,0 +1,87 @@
+# $LastChangedDate$
+# $Id$
+
+# For a description of the syntax of this configuration file,
+# see doc/kbuild/kconfig-language.txt.
+
+menu "Kernel"
+
+	config KERNEL_M
+		bool "Task Scheduler"
+		default n
+		help
+		Kernel Module
+
+	choice
+		prompt "Time-Slice for Scheduling (Resolution for User Timer)"
+		depends on KERNEL_M
+		default SCHED_PERIOD_10
+		config SCHED_PERIOD_10
+			bool "10ms"
+		config SCHED_PERIOD_32
+			bool "32ms"
+		config SCHED_PERIOD_100
+			bool "100ms"
+	endchoice
+
+#	config SCHED_TIMER_MS
+#		depends on ENABLE_SCHEDULING
+#		int
+#		prompt "Time Slice (ms)"
+#		range 5 1000
+#		default 10
+
+	choice
+		prompt "Task queue length"
+		depends on KERNEL_M
+		default TASKQ_LEN_32
+		config TASKQ_LEN_8
+			bool "8"
+		config TASKQ_LEN_16
+			bool "16"
+		config TASKQ_LEN_32
+			bool "32"
+		config TASKQ_LEN_64
+			bool "64"
+		config TASKQ_LEN_128
+			bool "128"
+	endchoice
+
+	config USER_TIMER_M
+		bool "User Timer"
+		depends on KERNEL_M
+		default y
+
+	config THREAD_M
+		bool "Multi-thread support"
+		depends on KERNEL_M
+		default y
+		help
+		Supports up to 5 user threads.
+
+	config ENABLE_SCHEDULING
+		bool "Periodic Scheduling (Automatically by Hardware Timer)"
+		depends on THREAD_M
+		default y
+
+	config THREAD_EXT_M
+		bool "Thread Extension"
+		depends on THREAD_M
+		default n
+		help
+		Supports up to 15 threads. This may lower the performace.
+
+	config SEM_M
+		bool "Semaphore"
+		depends on THREAD_M
+		default n 
+
+	config MSGQ_M
+		bool "Message Queue"
+		depends on THREAD_M
+		default n
+
+
+
+endmenu
+

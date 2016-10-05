@@ -1,0 +1,1 @@
+@ pwd | awk '{print "%NOS_HOME%" substr($0, length("%NOS_HOME%")+1, 100)}'

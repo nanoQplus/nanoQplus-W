@@ -1,0 +1,146 @@
+# -*- mode:Makefile; -*-
+################################################################################
+#                                                                              #
+#       Makefile.kconf                                                         #
+#       Author : Sangcheol Kim, Haeyong Kim (ETRI), 2015                       #
+#       Des : Makefile for NanoQplus                                           #
+#                                                                              #
+#       Usage :                                                                #
+#       % make menuconfig platform=PLATFORM_NAME                               #
+#       % make                                                                 #
+#       % make burn port=PORT_TYPE                                             #
+#                                                                              #
+#       To remove compliled files                                              #
+#       % make clean                                                           #
+#       % make distclean (remove configuration also)                           #
+################################################################################
+
+### Export $NOS_HOME (in .bash_profile or .profile)
+# ex) export NOS_HOME=/cygdrive/c/nos
+# ex) export NOS_HOME=/cygdrive/c/cygwin/home/nos
+# ex) export NOS_HOME="$HOME/workspace/nos"
+
+### kconfig root directory
+export srctree = $(NOS_HOME)
+
+### Get development environment
+ifeq ($(findstring CYGWIN, $(shell uname)), CYGWIN)
+	export OS = Cygwin
+else
+	export OS = $(shell uname)
+endif
+
+ifeq ($(findstring MINGW, $(OS)), MINGW)
+	export OS = Mingw
+endif
+
+### Read Kconfig configuration (MCU, PLATFORM) if exist
+-include .config
+ifneq ($(CONFIG_MCU_NAME),)
+	export MCU = $(subst ",,$(CONFIG_MCU_NAME))
+endif
+ifneq ($(CONFIG_PLATFORM_NAME),)
+	export PLATFORM = $(subst ",,$(CONFIG_PLATFORM_NAME))
+endif
+
+### Get current directory name (TRG)
+PWDSL=$(subst /, , $(shell pwd))
+export TRG=$(word $(words $(PWDSL)), $(PWDSL))
+
+### for windows ###
+ifeq ($(OS), Mingw)
+PWD = $(shell npwd)
+export PWD
+endif
+
+### define commanders
+MD		= mkdir -p
+CD		= cd
+RD		= rm -rf
+RM		= rm -f 
+MV		= mv
+CP		= cp -f
+COMDIR = $(PWD)/build
+
+#If 'platform' has not been set with a command argument, use '.platform' file.
+ifeq ($(platform),)
+	override platform = $(PLATFORM)
+endif
+#If 'platform' is not valid, override it to empty.
+ifeq ("$(wildcard $(NOS_HOME)/nos/platform/$(platform))","")
+	override platform =
+endif
+
+
+### switches
+all : $(NOS_HOME)
+	@$(MD) $(COMDIR)
+	@chmod 777 $(COMDIR)
+	@$(MAKE) -C $(COMDIR) -f $(NOS_HOME)/support/make/Makefile all
+
+
+menuconfig : $(NOS_HOME)
+	-$(MAKE) -C $(NOS_HOME)/tools/src/kconfig $@
+ifeq ($(platform),)
+	@echo
+	@echo "########## NanoQplus3: Alert ##########"
+	@echo "'platform' variable must be given at the first time."
+	@echo "Usage: make menuconfig platform=[PLATFORM]"
+	@echo "List of PLATFORM"
+	@for subdir in $(subst /,,$(subst $(NOS_HOME)/nos/platform/,,$(filter %/, $(wildcard $(NOS_HOME)/nos/platform/*/)))); do\
+		echo " - $$subdir"; \
+	done
+	@echo
+	@false
+else
+	-dos2unix .config
+	@KCONFIG_NOTIMESTAMP=1\
+		$(NOS_HOME)/tools/mconf.exe\
+		$(NOS_HOME)/nos/platform/$(platform)/Kconfig
+endif
+
+burn : 
+	@$(MAKE) -f $(NOS_HOME)/nos/platform/$(PLATFORM)/Makefile.prog $@
+
+clean :
+	$(RD) build 
+	$(RM) $(TRG).rom $(TRG).hex $(TRG).lst $(TRG).map $(TRG).bin $(TRG).elf $(TRG).sky $(TRG).xml $(TRG).uvproj $(TRG).eww $(TRG).out *.tmp *.stackdump
+	$(RD) settings
+
+distclean : clean
+	$(RM) .config* kconf.h
+
+	
+lib : $(NOS_HOME)
+	@$(MD) $(COMDIR)
+	@$(MAKE) -C $(COMDIR) -f $(NOS_HOME)/support/make/Makefile $@
+
+libclean: clean
+	@$(MAKE) -f $(NOS_HOME)/support/make/Makefile libclean
+	
+	
+doc : 
+	@-$(MAKE) -C $(NOS_HOME)/doc
+
+$(NOS_HOME) :
+ifeq ($(NOS_HOME),)
+	@echo
+	@echo "########## NanoQplus3: Alert ##########"
+	@echo "NOS_HOME must be defined as an environment variable."
+	@echo
+	@false
+else
+	@echo
+	@echo "########## NanoQplus3 ##########"
+	@echo "NOS_HOME=$(NOS_HOME)"
+	@echo
+endif
+
+
+print : 
+	@echo ""
+	@echo "MCU=$(MCU), $(CONFIG_MCU_NAME)"
+	@echo "PLATFORM=$(PLATFORM), $(CONFIG_PLATFORM_NAME)"
+	@echo "NOS_HOME="$(NOS_HOME)
+	$(MAKE) -C $(COMDIR) -f $(NOS_HOME)/support/make/Makefile print
+	

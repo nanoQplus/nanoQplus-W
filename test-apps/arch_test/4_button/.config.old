@@ -1,0 +1,49 @@
+#
+# Automatically generated make config: don't edit
+#
+CONFIG_MCU_NAME="stm32f40x"
+CONFIG_GCC_TOOLCHAIN=y
+
+#
+# Platform: STM32F4 Discovery Kit
+#
+CONFIG_PLATFORM_NAME="stm32f4_discovery"
+CONFIG_UART_M=y
+CONFIG_UART1_STDIO=y
+# CONFIG_UART1_SLIPIO is not set
+# CONFIG_UART1_DISABLED is not set
+CONFIG_UART1=y
+CONFIG_UART1_BAUDRATE=115200
+# CONFIG_UART2_STDIO is not set
+# CONFIG_UART2_SLIPIO is not set
+CONFIG_UART2_DISABLED=y
+# CONFIG_UART2 is not set
+CONFIG_LED_M=y
+CONFIG_BUTTON_M=y
+# CONFIG_NAND_M is not set
+# CONFIG_PWM_M is not set
+
+#
+# Kernel
+#
+CONFIG_KERNEL_M=y
+CONFIG_SCHED_PERIOD_10=y
+# CONFIG_SCHED_PERIOD_32 is not set
+# CONFIG_SCHED_PERIOD_100 is not set
+# CONFIG_TASKQ_LEN_8 is not set
+# CONFIG_TASKQ_LEN_16 is not set
+CONFIG_TASKQ_LEN_32=y
+# CONFIG_TASKQ_LEN_64 is not set
+# CONFIG_TASKQ_LEN_128 is not set
+CONFIG_USER_TIMER_M=y
+CONFIG_THREAD_M=y
+CONFIG_ENABLE_SCHEDULING=y
+# CONFIG_THREAD_EXT_M is not set
+# CONFIG_SEM_M is not set
+# CONFIG_MSGQ_M is not set
+
+#
+# Debugging
+#
+# CONFIG_NOS_DEBUG_M is not set
+# CONFIG_HEAP_DEBUG is not set

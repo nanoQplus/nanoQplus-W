@@ -1,0 +1,43 @@
+# -*- mode:Makefile; -*-
+###############################################################################
+# Makefile for Platform specific Files, Defines, Flags, ...                   #
+# Author: Duk-Kyun Woo (ETRI)                                                 #
+#                                                                             #
+# startup                                                                     #
+#$(SUPPORT_DIR)/Libraries/CMSIS/ST/STM32F4xx/Source/Templates/system_stm32f4xx.c#
+#$(SUPPORT_DIR)/Libraries/CMSIS/ST/STM32F4xx/Source/Templates/*/*.s           #
+#                                                                             #
+# interrupt handlers                                                          #
+#$(SUPPORT_DIR)/Project/Demonstration/stm32f4xx_it.c                          #
+#                                                                             #
+# linker script                                                               #
+#$(SUPPORT_DIR)/Project/Demonstration/*/*/*.ld (GCC)                          #
+###############################################################################
+
+#PREDEFINES+=\
+	STM32F407VG\
+	STM32F40X_XL\
+	HSE_VALUE=8000000
+
+PREDEFINES+=\
+	STM32F407VG\
+	STM32F40X_XL\
+	STM32F40_41xxx\
+	HSE_VALUE=8000000
+
+SUPPORT_SRCFILES += $(foreach dir,$(SUPPORT_SRCDIR),$(wildcard $(dir)/*.c))
+
+# Toolchain-specific configurations
+ifeq ($(CONFIG_GCC_TOOLCHAIN),y)
+	SUPPORT_SRCDIR +=$(NOS_HOME)/nos/platform/$(PLATFORM)/GCC
+	SUPPORT_SRCFILES += $(NOS_HOME)/nos/platform/$(PLATFORM)/GCC/startup_stm32f4xx.s
+
+	ifeq ($(OS),Cygwin)
+		LDFLAGS += -T"$(shell cygpath -a -m $(NOS_HOME)/nos/platform/$(PLATFORM)/GCC/stm32f407vg.ld)"
+	else
+		LDFLAGS += -T$(NOS_HOME)/nos/platform/$(PLATFORM)/GCC/stm32f407vg.ld
+	endif
+endif
+
+
+platform_env_check:

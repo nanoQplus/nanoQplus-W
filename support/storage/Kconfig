@@ -1,0 +1,22 @@
+menu "Storage"
+
+	config CFD_M
+		bool "Common Flash Driver"
+		default n
+
+	config SSL_M
+		bool "Snapshot Support Layer"
+		default n
+		depends on CFD_M
+
+	config FTL_M
+		bool "Flash Translation Layer"
+		default n
+		depends on CFD_M
+
+	config LPFS_M
+		bool "Low-Power File System"
+		default n
+		depends on FTL_M
+
+endmenu

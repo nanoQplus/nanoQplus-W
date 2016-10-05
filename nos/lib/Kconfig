@@ -1,0 +1,21 @@
+menu "Debugging"
+
+	config NOS_DEBUG_M
+		bool "Debugging via STDIO"
+		default n
+		depends on UART_M
+
+#	config NOS_STACK_DEBUG_M
+#		bool "Print stack usage whenever STACK grows."
+#		default n
+#		depends on UART_M
+#		help
+#		Print the lowest STACK pointer (Maximum use of STACK)
+
+	config HEAP_DEBUG
+		bool "Heap debug"
+		default n
+		depends on UART_M
+
+endmenu
+

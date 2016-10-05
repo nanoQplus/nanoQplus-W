@@ -1,0 +1,82 @@
+//===================================================================
+//
+// error.h (@sheart)
+//
+//===================================================================
+// Copyright 2016-2025, ETRI
+//===================================================================
+
+#ifndef ERROR_H
+#define ERROR_H
+#include "kconf.h"
+#include "typedef.h"
+#include "arch.h"
+
+enum OS_ERR_TYPE
+{
+	E_OK	= 0,
+	E_OS_PERMISSION,
+	E_SYS_MEMORY,
+	E_ALARM_CREATE,
+	E_ALARM_ID,
+	E_ALARM_MEMORY,
+	E_ALARM_INVALID,
+	E_MUTEX_CREATE,
+	E_MUTEX,
+	E_MUTEX_INVALID,
+	E_MUTEX_PRIORITY,
+	E_MUTEX_ACCESS,
+	E_MUTEX_OCCUPIED,
+	E_EVENT_MODE,
+	E_EVENT_STATE,
+	E_THREAD_PRIORITY,
+	E_THREAD_OVER,
+	E_THREAD_INVALID,
+	E_THREAD_ID,
+	E_THREAD_OPTION,
+	E_THREAD_STATE,
+	E_THREADQ_FULL,
+	E_THREADQ_ENQUEUE,
+	E_THREADQ_DEQUEUE,
+	E_THREADQ_FETCH,
+	E_MSGQ_CREATE,
+	E_MSGQ_ID,
+	E_MSGQ_INVALID,
+	E_MSGQ_FULL,
+	E_MSGQ_EMPTY,
+	E_TASKQ_FULL
+};
+
+enum OS_SERVICE_TYPE
+{
+	S_THREAD_CREATE = 0,
+	S_THREAD_TERMINATE,
+	S_THREAD_EXIT,
+	S_THREAD_ACTIVATE,
+	S_THREAD_CHAIN,
+	S_THREAD_SLEEP,
+	S_THREAD_WAIT,
+	S_THREAD_WAKEUP,
+	S_THREAD_PRIORITY_CHANGE,
+	S_ALARM_CREATE,
+	S_ALARM_DESTROY,
+	S_ALARM_START,
+	S_ALARM_STOP,
+	S_EVENT_CLEAR,
+	S_EVENT_GET,
+	S_EVENT_SET,
+	S_EVENT_WAIT,
+	S_MSGQ_CREATE,
+	S_MSGQ_DESTROY,
+	S_MSGQ_SEND,
+	S_MSGQ_RECV,
+	S_MUTEX_CREATE,
+	S_MUTEX_DESTROY,
+	S_MUTEX_LOCK,
+	S_MUTEX_UNLOCK,
+	S_TASKQ_REGISTER
+};
+
+void service_error_check(UINT32 fid, STATUS status);
+
+#endif

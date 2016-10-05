@@ -1,0 +1,85 @@
+source "nos/arch/stm32f40x/Kconfig"
+#	help
+#	STM32F407VG (Flash: 1024KB, RAM: 192KB)
+
+menu "Platform: STM32F4 Discovery Kit"
+	config PLATFORM_NAME
+		string
+		default "stm32f4_discovery"
+		help
+		PLATFORM_NAME MUST be the same as "directory name"
+
+	menuconfig UART_M
+		bool "UART"
+		default y
+
+		choice
+			prompt "UART1"
+			depends on UART_M
+			default UART1_STDIO
+
+			config UART1_STDIO
+				bool "Standard I/O"
+				select UART1
+			config UART1_SLIPIO
+				bool "SLIP I/O"
+				select UART1
+			config UART1_DISABLED
+				bool "Disable"
+		endchoice
+
+		config UART1
+			bool
+			default y
+			depends on UART_M
+			
+		config UART1_BAUDRATE
+			prompt "UART1 Baud rate (Default:115200, Max:4500000)"
+			int 
+			default "115200"
+			depends on UART1
+
+		choice
+			prompt "UART2"
+			depends on UART_M 
+			default UART2_DISABLED
+
+			config UART2_STDIO
+				bool "Standard I/O"
+				select UART2
+			config UART2_SLIPIO
+				bool "SLIP I/O"
+				select UART2
+			config UART2_DISABLED
+				bool "Disable"
+		endchoice
+
+		config UART2
+			bool
+			default n
+			depends on UART_M
+			
+		config UART2_BAUDRATE
+			prompt "UART2 Baud rate (Default:115200, Max:2250000)"
+			int 
+			default "115200"
+			depends on UART2
+	
+	config LED_M
+		bool "LED"
+		default y
+	
+	config BUTTON_M
+		bool "Button"
+		default y
+
+	config NAND_M
+		bool "Nand Flash (K9F1G08U0D, 128MB)"
+		default y
+
+	config PWM_M
+		bool "Power Management"
+		default y
+endmenu
+
+source "Kconfig"
